@@ -44,6 +44,8 @@ GPU, no external service calls.
 npm install
 
 # 2. Start the server (default port 3000)
+npm start
+# or, equivalently:
 node index.js
 # → "Server running on port 3000"
 
@@ -51,6 +53,10 @@ node index.js
 curl http://localhost:3000/health
 # → {"status":"OK","timestamp":"..."}
 ```
+
+> **Note on `index.js`:** The Express app is `export default`-ed so it works as a
+> Vercel serverless function. `app.listen()` is only called when
+> `NODE_ENV !== 'production'`, so local dev still works exactly like before.
 
 To use a custom port:
 ```bash
@@ -165,14 +171,15 @@ the service is 100% rule-based.
 .
 ├── index.js          # Express server + all classifiers + safety net
 ├── test.mjs          # Self-contained test suite (40 tests, 7 sections)
+├── vercel.json       # Vercel routing config (sends all routes to index.js)
 ├── package.json      # "type": "module", deps: express + dotenv
 ├── package-lock.json
 ├── .gitignore        # node_modules, .env
 └── README.md         # this file
 ```
 
-**Total source: 460 lines of `index.js` + 360 lines of `test.mjs`** (no other
-runtime files).
+**Total source: ~465 lines of `index.js` + ~360 lines of `test.mjs`** (no other
+runtime files; `vercel.json` is 10 lines of static config).
 
 ---
 
@@ -268,16 +275,43 @@ fly deploy
 ```
 
 #### Vercel
-The service uses `express` with persistent connections — Vercel's serverless
-functions don't fit naturally. Use Render / Railway / Fly instead. If you must
-use Vercel, wrap the express app with `@vercel/node`:
+Vercel is fully supported. The project ships with a `vercel.json` that routes
+all incoming requests to the Express app via `@vercel/node`.
+
+**Option A — Vercel Dashboard (recommended):**
+1. Go to [vercel.com](https://vercel.com) → sign in with GitHub.
+2. Click **"Add New…" → "Project"**.
+3. Import the `sust-carnival-mock-solution` repo.
+4. Vercel auto-detects the framework. Leave defaults:
+   - **Framework Preset:** Other
+   - **Build Command:** *(leave empty)*
+   - **Install Command:** `npm install`
+   - **Output Directory:** *(leave empty)*
+5. *(Optional)* Add environment variables (e.g. `NODE_ENV=production`).
+6. Click **"Deploy"**. Within ~1–2 minutes you'll get a URL like
+   `https://sust-carnival-mock-solution.vercel.app`.
+
+**Option B — Vercel CLI:**
 ```bash
-npm install @vercel/node
+# Install CLI
+npm install -g vercel
+
+# Login (opens browser)
+vercel login
+
+# Deploy (from project root)
+vercel              # preview deployment
+vercel --prod       # production deployment
 ```
-and add a `vercel.json`:
-```json
-{ "builds": [{ "src": "index.js", "use": "@vercel/node" }] }
-```
+
+> **How it works:** `index.js` exports the Express app as the default export.
+> `vercel.json` tells Vercel to use `@vercel/node` and forwards all routes
+> (`/(.*)`) to `index.js`. In production (`NODE_ENV=production`) `app.listen()`
+> is skipped, so the process boots as a pure serverless handler — no port
+> binding required.
+
+**After every `git push`**, Vercel automatically redeploys. No further action
+needed.
 
 #### EC2 / generic VPS
 ```bash
@@ -393,7 +427,7 @@ Per the spec, the Google form requires:
 |---|---|
 | GitHub repo URL | (this repo) |
 | Live API base URL | (your deployed URL — see Deployment guide) |
-| Deployment platform | Render / Railway / Fly / Vercel / EC2 / Poridhi |
+| Deployment platform | **Vercel** (recommended) / Render / Railway / Fly / EC2 / Poridhi |
 | LLM used | **No** — rules-based only |
 
 ---
