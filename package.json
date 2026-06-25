@@ -1,5 +1,31 @@
 {
+  "name": "queuestorm-warmup-mock",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "worker": "node src/workers/index.js",
+    "migrate": "node src/db/migrate.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
+    "db:generate": "drizzle-kit generate"
+  },
   "dependencies": {
-    "express": "^5.2.1"
+    "axios": "^1.7.7",
+    "bcrypt": "^5.1.1",
+    "bullmq": "^5.30.0",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.36.0",
+    "express": "^5.2.1",
+    "ioredis": "^5.4.1",
+    "pg": "^8.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.28.0",
+    "jest": "^29.7.0",
+    "nock": "^14.0.1",
+    "supertest": "^7.0.0"
   }
 }

@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: queuestorm
+      POSTGRES_PASSWORD: queuestorm
+      POSTGRES_DB: queuestorm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U queuestorm"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://queuestorm:queuestorm@postgres:5432/queuestorm
+      REDIS_URL: redis://redis:6379
+    command: ["node", "src/db/migrate.js"]
+
+  api:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://queuestorm:queuestorm@postgres:5432/queuestorm
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000"
+    command: ["node", "index.js"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/health"]
+      interval: 5s
+
+  worker:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://queuestorm:queuestorm@postgres:5432/queuestorm
+      REDIS_URL: redis://redis:6379
+    command: ["node", "src/workers/index.js"]
+
+volumes:
+  pgdata:
