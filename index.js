@@ -257,8 +257,8 @@ function classifyCaseType(message = '') {
     const token = (word) =>
         new RegExp(`(^|[\\s,।!?()\\[\\]"'\\-:;])${word}(?=$|[\\s,।!?()\\[\\]"'\\-:;])`);
 
-    // 1. Phishing / social engineering — anything asking for OTP, PIN, password, CVV
-    //    or describing a scam call / SMS / link.
+    // 1. Phishing / social engineering — anything asking for OTP, PIN, password, CVV,
+    //    card number, or describing a scam call / SMS / link.
     const phishingCues = [
         /\bphish(?:ing)?\b/,
         /social[\s-]?engineering/,
@@ -267,7 +267,12 @@ function classifyCaseType(message = '') {
         /fake\s+(?:call|sms|message|site|page|number|officer)/,
         /\bimpersonat/,
         /\b(?:otp|pin|password|cvv|passcode)\b/,
-        /ask(?:ing|ed|s)?\s+(?:me\s+)?(?:for\s+)?(?:my\s+)?(?:otp|pin|password|cvv)/,
+        /\bcard\s*(?:number|no\.?)\b/,                     // card number, card no
+        /\b(?:atm|debit|credit)\s*card\s*(?:number|no\.?)?\b/,
+        /ask(?:ing|ed|s)?\s+(?:me\s+)?(?:for\s+)?(?:my\s+)?(?:otp|pin|password|cvv|card)/,
+        /type\s+(?:your|the)\s+(?:otp|pin|password|cvv|card)/,
+        /share\s+(?:your|the)\s+(?:otp|pin|password|cvv|card)/,
+        /send\s+(?:me|us)\s+(?:your|the)\s+(?:otp|pin|password|cvv|card)/,
         /someone\s+(?:called|messaged|texted)/,
         /pretend(?:ing)?\s+to\s+be/,
         // Bangla cues

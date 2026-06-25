@@ -3,7 +3,12 @@
     "allow": [
       "Bash(curl:*)",
       "Bash(node smoke-test.mjs)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id \\\\$_.OwningProcess -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500; 'done'\")",
+      "Bash(node test.mjs)",
+      "Bash(node test.mjs --no-start --base-url http://localhost:3000)",
+      "Bash(rm smoke-test.mjs)",
+      "Bash(ls *.mjs *.js *.json)"
     ]
   }
 }
