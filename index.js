@@ -456,5 +456,11 @@ export {
     buildAgentSummary, assertSummarySafe, extractAmount, FORBIDDEN_PHRASES,
 };
 
+// Export the app for Vercel serverless deployment.
+// Locally, we still call app.listen() so `node index.js` works as before.
+export default app;
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
