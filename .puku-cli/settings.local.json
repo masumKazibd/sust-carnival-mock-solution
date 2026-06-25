@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(node smoke-test.mjs)",
+      "Bash(echo \"EXIT=$?\")"
+    ]
+  }
+}

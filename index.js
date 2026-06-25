@@ -5,6 +5,18 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+// Return JSON 400 (not HTML) when the request body isn't valid JSON or is not an object.
+// This keeps error responses consistent for API consumers.
+app.use((err, req, res, next) => {
+    if (err && err.type === 'entity.parse.failed') {
+        return res.status(400).json({
+            error: 'Invalid JSON body',
+            details: [{ field: '(body)', message: 'Request body must be a valid JSON object' }],
+        });
+    }
+    next(err);
+});
+
 // case_type Enum — only these values are allowed
 const CASE_TYPES = Object.freeze({
     WRONG_TRANSFER: 'wrong_transfer',
@@ -324,9 +336,88 @@ app.get('/health', (req, res) => {
     });
 });
 
+// ----------------------------------------------------------------------------
+// Request validation
+//   Per spec section 2:
+//     ticket_id: required string
+//     message:   required string
+//     channel:   optional, one of app | sms | call_center | merchant_portal
+//     locale:    optional, one of bn | en | mixed
+// ----------------------------------------------------------------------------
+const VALID_CHANNELS = new Set(['app', 'sms', 'call_center', 'merchant_portal']);
+const VALID_LOCALES = new Set(['bn', 'en', 'mixed']);
+
+function validateTicketRequest(body) {
+    const errors = [];
+    const b = body && typeof body === 'object' ? body : {};
+
+    const ticket_id = b.ticket_id;
+    if (ticket_id === undefined || ticket_id === null || String(ticket_id).trim() === '') {
+        errors.push({ field: 'ticket_id', message: 'ticket_id is required and must be a non-empty string' });
+    } else if (typeof ticket_id !== 'string') {
+        errors.push({ field: 'ticket_id', message: 'ticket_id must be a string' });
+    } else if (ticket_id.length > 128) {
+        errors.push({ field: 'ticket_id', message: 'ticket_id is too long (max 128 chars)' });
+    }
+
+    const message = b.message;
+    if (message === undefined || message === null || String(message).trim() === '') {
+        errors.push({ field: 'message', message: 'message is required and must be a non-empty string' });
+    } else if (typeof message !== 'string') {
+        errors.push({ field: 'message', message: 'message must be a string' });
+    } else if (message.length > 5000) {
+        errors.push({ field: 'message', message: 'message is too long (max 5000 chars)' });
+    }
+
+    const channel = b.channel;
+    if (channel !== undefined && channel !== null && channel !== '') {
+        if (typeof channel !== 'string' || !VALID_CHANNELS.has(channel)) {
+            errors.push({
+                field: 'channel',
+                message: `channel must be one of: ${[...VALID_CHANNELS].join(', ')}`,
+            });
+        }
+    }
+
+    const locale = b.locale;
+    if (locale !== undefined && locale !== null && locale !== '') {
+        if (typeof locale !== 'string' || !VALID_LOCALES.has(locale)) {
+            errors.push({
+                field: 'locale',
+                message: `locale must be one of: ${[...VALID_LOCALES].join(', ')}`,
+            });
+        }
+    }
+
+    return {
+        ok: errors.length === 0,
+        errors,
+        normalized: {
+            ticket_id: typeof ticket_id === 'string' ? ticket_id.trim() : ticket_id,
+            message: typeof message === 'string' ? message : '',
+            channel: typeof channel === 'string' ? channel : undefined,
+            locale: typeof locale === 'string' ? locale : undefined,
+        },
+    };
+}
+
 // Required Endpoint: Sort Ticket
 app.post('/sort-ticket', (req, res) => {
-    const { ticket_id, message, channel, locale } = req.body;
+    const validation = validateTicketRequest(req.body);
+
+    if (!validation.ok) {
+        // Echo back ticket_id if it was provided (even if invalid) so the caller
+        // can correlate the error with their request.
+        const echoTicketId =
+            req.body && typeof req.body.ticket_id === 'string' ? req.body.ticket_id : null;
+        return res.status(400).json({
+            error: 'Validation failed',
+            details: validation.errors,
+            ...(echoTicketId !== null ? { ticket_id: echoTicketId } : {}),
+        });
+    }
+
+    const { ticket_id, message } = validation.normalized;
 
     const case_type = classifyCaseType(message);
     const severity = classifySeverity(message, case_type);
@@ -341,7 +432,7 @@ app.post('/sort-ticket', (req, res) => {
     });
 
     res.status(200).json({
-        ticket_id: ticket_id || "T-001",
+        ticket_id, // echo exactly what was sent (after trimming)
         case_type, // guaranteed to be one of the CASE_TYPES enum values
         severity, // guaranteed to be one of the SEVERITY enum values
         department, // guaranteed to be one of the DEPARTMENTS enum values
