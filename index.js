@@ -35,6 +35,85 @@ const CASE_TYPE_TO_DEPARTMENT = Object.freeze({
     [CASE_TYPES.OTHER]: DEPARTMENTS.CUSTOMER_SUPPORT,
 });
 
+// severity Enum — only these values are allowed
+const SEVERITY = Object.freeze({
+    LOW: 'low',
+    MEDIUM: 'medium',
+    HIGH: 'high',
+    CRITICAL: 'critical',
+});
+
+const VALID_SEVERITY = new Set(Object.values(SEVERITY));
+
+// Classify ticket severity from the message + case_type.
+// Rules (from spec public samples + general policy):
+//   - phishing_or_social_engineering        → critical
+//   - payment_failed (esp. balance deducted) → high
+//   - wrong_transfer                         → high
+//   - refund_request                         → low
+//   - other                                  → low (escalated to medium if money mentioned)
+function classifySeverity(message = '', case_type) {
+    const text = String(message).toLowerCase();
+
+    switch (case_type) {
+        case CASE_TYPES.PHISHING_OR_SOCIAL_ENGINEERING:
+            return SEVERITY.CRITICAL;
+
+        case CASE_TYPES.PAYMENT_FAILED:
+            // "balance deducted" / "money deducted" escalates urgency
+            if (/(balance|money).{0,15}(deduct|debited|taken)|lost my money|stuck/.test(text)) {
+                return SEVERITY.HIGH;
+            }
+            return SEVERITY.HIGH; // payment failure is always high per public sample #2
+
+        case CASE_TYPES.WRONG_TRANSFER:
+            return SEVERITY.HIGH; // per public sample #1
+
+        case CASE_TYPES.REFUND_REQUEST:
+            return SEVERITY.LOW; // per public sample #4
+
+        case CASE_TYPES.OTHER:
+        default:
+            // Generic complaint that mentions money/transaction bumps to medium
+            if (/(money|taka|bdt|payment|transaction|account)/.test(text)) {
+                return SEVERITY.MEDIUM;
+            }
+            return SEVERITY.LOW; // e.g. "App crashed when I opened it" → low (sample #5)
+    }
+}
+
+// Compute classification confidence in [0, 1].
+// Higher when a specific regex matched; lower when falling through to `other`.
+function computeConfidence(case_type, message) {
+    const text = String(message || '').toLowerCase();
+
+    switch (case_type) {
+        case CASE_TYPES.PHISHING_OR_SOCIAL_ENGINEERING:
+            // Strong, unambiguous signal — but high stakes so we leave a little headroom
+            return 0.95;
+        case CASE_TYPES.PAYMENT_FAILED:
+            // Boost if balance-deducted cue is present
+            return /(balance|money).{0,15}(deduct|debited|taken)|stuck/.test(text) ? 0.95 : 0.9;
+        case CASE_TYPES.WRONG_TRANSFER:
+            return 0.9;
+        case CASE_TYPES.REFUND_REQUEST:
+            return 0.9;
+        case CASE_TYPES.OTHER:
+        default:
+            // No signal matched — admit low confidence
+            return 0.5;
+    }
+}
+
+// Decide whether a human must review this ticket.
+// Per spec: phishing or critical cases must be human-reviewed.
+function requiresHumanReview(case_type, severity) {
+    return (
+        case_type === CASE_TYPES.PHISHING_OR_SOCIAL_ENGINEERING ||
+        severity === SEVERITY.CRITICAL
+    );
+}
+
 // Classify ticket message into one of the enum values
 function classifyCaseType(message = '') {
     const text = String(message).toLowerCase();
@@ -67,21 +146,29 @@ app.post('/sort-ticket', (req, res) => {
     const { ticket_id, message, channel, locale } = req.body;
 
     const case_type = classifyCaseType(message);
+    const severity = classifySeverity(message, case_type);
     const department = CASE_TYPE_TO_DEPARTMENT[case_type] || DEPARTMENTS.CUSTOMER_SUPPORT;
+    const confidence = computeConfidence(case_type, message);
+    const human_review_required = requiresHumanReview(case_type, severity);
 
     res.status(200).json({
         ticket_id: ticket_id || "T-001",
         case_type, // guaranteed to be one of the CASE_TYPES enum values
-        severity: "low",
+        severity, // guaranteed to be one of the SEVERITY enum values
         department, // guaranteed to be one of the DEPARTMENTS enum values
         agent_summary: "The system has received the ticket and it is queued for human review.",
-        human_review_required: false,
-        confidence: 1.0
+        human_review_required, // true for phishing or critical severity
+        confidence // float in [0, 1]
     });
 });
 
-// Export enums so they can be reused/imported elsewhere
-export { CASE_TYPES, VALID_CASE_TYPES, DEPARTMENTS, VALID_DEPARTMENTS, CASE_TYPE_TO_DEPARTMENT };
+// Export enums + helpers so they can be reused/imported elsewhere
+export {
+    CASE_TYPES, VALID_CASE_TYPES,
+    DEPARTMENTS, VALID_DEPARTMENTS, CASE_TYPE_TO_DEPARTMENT,
+    SEVERITY, VALID_SEVERITY,
+    classifyCaseType, classifySeverity, computeConfidence, requiresHumanReview,
+};
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
