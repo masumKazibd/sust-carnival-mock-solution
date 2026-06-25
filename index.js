@@ -114,22 +114,86 @@ function requiresHumanReview(case_type, severity) {
     );
 }
 
-// Classify ticket message into one of the enum values
+// Classify ticket message into one of the enum values.
+// Supports English and Bangla (bn) cues per the locale field.
+// Note: JavaScript \b only treats ASCII word chars as word boundaries,
+// so Bangla cues use explicit whitespace / punctuation boundaries.
 function classifyCaseType(message = '') {
     const text = String(message).toLowerCase();
 
-    if (/(phish|social engineering|scam|suspicious link|fake|impersonat)/.test(text)) {
+    // Helper: matches a token only when surrounded by start-of-string,
+    // whitespace, or common punctuation. Works for both ASCII and Bangla.
+    const token = (word) =>
+        new RegExp(`(^|[\\s,।!?()\\[\\]"'\\-:;])${word}(?=$|[\\s,।!?()\\[\\]"'\\-:;])`);
+
+    // 1. Phishing / social engineering — anything asking for OTP, PIN, password, CVV
+    //    or describing a scam call / SMS / link.
+    const phishingCues = [
+        /\bphish(?:ing)?\b/,
+        /social[\s-]?engineering/,
+        /\bscam\b/,
+        /suspicious[\s_-]?link/,
+        /fake\s+(?:call|sms|message|site|page|number|officer)/,
+        /\bimpersonat/,
+        /\b(?:otp|pin|password|cvv|passcode)\b/,
+        /ask(?:ing|ed|s)?\s+(?:me\s+)?(?:for\s+)?(?:my\s+)?(?:otp|pin|password|cvv)/,
+        /someone\s+(?:called|messaged|texted)/,
+        /pretend(?:ing)?\s+to\s+be/,
+        // Bangla cues
+        token('ওটিপি'),     // OTP
+        token('পিন'),       // PIN
+        token('পাসওয়ার্ড'), // password
+        /(ওটিপি|পিন|পাসওয়ার্ড)\s+চাই/, // asking for OTP/PIN/password
+    ];
+    if (phishingCues.some((re) => re.test(text))) {
         return CASE_TYPES.PHISHING_OR_SOCIAL_ENGINEERING;
     }
-    if (/(refund|return my money|reimburse)/.test(text)) {
+
+    // 2. Refund — customer wants money back / changed mind.
+    const refundCues = [
+        /\brefund\b/,
+        /return\s+(?:my\s+)?money/,
+        /\breimburse\b/,
+        /\bchargeback\b/,
+        /\bcancel\b.*(?:order|payment|transaction)/,
+    ];
+    if (refundCues.some((re) => re.test(text))) {
         return CASE_TYPES.REFUND_REQUEST;
     }
-    if (/(payment failed|transaction failed|payment declined|couldn't pay|charge failed)/.test(text)) {
+
+    // 3. Payment failed — transaction didn't complete, possibly balance deducted.
+    const paymentFailedCues = [
+        /payment\s+failed/,
+        /transaction\s+failed/,
+        /transaction\s+(?:did\s+not|doesn'?t)\s+(?:go\s+through|complete|work)/,
+        /payment\s+declined/,
+        /couldn'?t\s+pay/,
+        /charge\s+failed/,
+        /deducted\s+but\s+(?:not\s+)?received/,
+        /balance\s+(?:was\s+)?deducted/,
+        /money\s+(?:was\s+)?deducted/,
+        /double\s+charge/,
+    ];
+    if (paymentFailedCues.some((re) => re.test(text))) {
         return CASE_TYPES.PAYMENT_FAILED;
     }
-    if (/(wrong transfer|wrong account|incorrect transfer|mistaken transfer|sent to wrong)/.test(text)) {
+
+    // 4. Wrong transfer — money sent to wrong recipient.
+    const wrongTransferCues = [
+        /wrong\s+(?:transfer|number|account|recipient|person)/,
+        /sent\s+.*\s+to\s+(?:the\s+)?wrong/,
+        /incorrect\s+transfer/,
+        /mistaken\s+transfer/,
+        /mistakenly\s+sent/,
+        /sent\s+to\s+wrong/,
+        /\bby\s+mistake\b/,
+        // Bangla: ভুল নম্বর / ভুল একাউন্ট / ভুল ট্রান্সফার / ভুল রিসিভার
+        /ভুল\s*(?:নম্বর|একাউন্ট|ট্রান্সফার|রিসিভার)/,
+    ];
+    if (wrongTransferCues.some((re) => re.test(text))) {
         return CASE_TYPES.WRONG_TRANSFER;
     }
+
     return CASE_TYPES.OTHER;
 }
 
